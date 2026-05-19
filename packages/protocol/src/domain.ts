@@ -6,7 +6,7 @@ import {
   SeatIndexSchema,
   StreetSchema,
   UserIdSchema,
-} from './primitives.ts';
+} from './primitives';
 
 export const PlayerStatusSchema = v.picklist([
   'active',     // in the current hand

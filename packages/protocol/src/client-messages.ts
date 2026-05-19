@@ -3,7 +3,7 @@ import {
   ChipsSchema,
   SeatIndexSchema,
   TableIdSchema,
-} from './primitives.ts';
+} from './primitives';
 
 // Client -> Server messages.
 // All discriminated by `type`. Server validates with valibot before acting.

@@ -6,7 +6,7 @@ import {
   SeatIndexSchema,
   StreetSchema,
   UserIdSchema,
-} from './primitives.ts';
+} from './primitives';
 import {
   ActionKindSchema,
   HandStateSchema,
@@ -14,7 +14,7 @@ import {
   PotSchema,
   SeatStateSchema,
   TableSnapshotSchema,
-} from './domain.ts';
+} from './domain';
 
 // Server -> Client messages.
 
