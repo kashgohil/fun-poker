@@ -21,7 +21,7 @@ export const SeatIndexSchema = v.pipe(
   v.number(),
   v.integer(),
   v.minValue(0),
-  v.maxValue(8),
+  v.maxValue(12),
 );
 export type SeatIndex = v.InferOutput<typeof SeatIndexSchema>;
 

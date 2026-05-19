@@ -39,8 +39,8 @@ export const TableConfigSchema = v.object({
   bigBlind: ChipsSchema,
   minBuyIn: ChipsSchema,
   maxBuyIn: ChipsSchema,
-  maxSeats: v.literal(9),
-  actionTimeoutMs: v.pipe(v.number(), v.integer(), v.minValue(1000)),
+  maxSeats: v.literal(12),
+  actionTimeoutMs: v.pipe(v.number(), v.integer(), v.minValue(10000)),
 });
 export type TableConfig = v.InferOutput<typeof TableConfigSchema>;
 
