@@ -99,6 +99,14 @@
         "vitest": "^4.1.5",
       },
     },
+    "packages/engine": {
+      "name": "@fun-poker/engine",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5",
+      },
+    },
     "packages/protocol": {
       "name": "@fun-poker/protocol",
       "version": "0.0.0",
@@ -410,6 +418,8 @@
     "@expo/ws-tunnel": ["@expo/ws-tunnel@1.0.6", "", {}, "sha512-nDRbLmSrJar7abvUjp3smDwH8HcbZcoOEa5jVPUv9/9CajgmWw20JNRwTuBRzWIWIkEJDkz20GoNA+tSwUqk0Q=="],
 
     "@expo/xcpretty": ["@expo/xcpretty@4.4.4", "", { "dependencies": { "@babel/code-frame": "^7.20.0", "chalk": "^4.1.0", "js-yaml": "^4.1.0" }, "bin": { "excpretty": "build/cli.js" } }, "sha512-4aQzz9vgxcNXFfo/iyNgDDYfsU5XGKKxWxZopw0cVotHiW+U8IJbIxMaxsINs6bHhtkG3StKNPcOrn3eBuxKPw=="],
+
+    "@fun-poker/engine": ["@fun-poker/engine@workspace:packages/engine"],
 
     "@fun-poker/protocol": ["@fun-poker/protocol@workspace:packages/protocol"],
 
