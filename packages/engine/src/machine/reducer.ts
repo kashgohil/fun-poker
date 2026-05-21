@@ -1,4 +1,4 @@
-import type { Card } from '../cards/card';
+import { type Card, cardId } from '../cards/card';
 import type { Variant } from '../descriptor/variant';
 import { buildDeck } from '../cards/deck';
 import { mulberry32, shuffle } from '../cards/shuffle';
@@ -279,6 +279,19 @@ function advance(state: HandState): StepResult {
       continue;
     }
 
+    if (s.discarding !== null) {
+      if (s.discarding.pending.length > 0) {
+        events.push({
+          type: 'discard-requested',
+          seat: s.discarding.pending[0] as number,
+          count: s.discarding.count,
+        });
+        return { state: s, events };
+      }
+      s = { ...s, discarding: null, stageIndex: s.stageIndex + 1 };
+      continue;
+    }
+
     const stage = s.variant.stages[s.stageIndex];
     if (stage === undefined) {
       const finished = doShowdown(s);
@@ -310,8 +323,15 @@ function advance(state: HandState): StepResult {
         events.push(...finished.events);
         break;
       }
+      case 'discard': {
+        const seats = orderFromButton(
+          s,
+          s.players.filter((p) => p.status !== 'folded').map((p) => p.seat),
+        );
+        s = { ...s, discarding: { count: stage.count, pending: seats } };
+        break;
+      }
       case 'draw':
-      case 'discard':
         throw new Error(`stage '${stage.kind}' is not implemented yet`);
     }
   }
@@ -370,6 +390,7 @@ export function createHand(setup: HandSetup): StepResult {
     street: 0,
     pot: 0,
     betting: null,
+    discarding: null,
     blinds: {
       sb: { seat: (players[sb] as HandPlayer).seat, amount: sbPaid },
       bb: { seat: (players[bb] as HandPlayer).seat, amount: bbPaid },
@@ -385,11 +406,77 @@ export function createHand(setup: HandSetup): StepResult {
   return { state: advanced.state, events: [...events, ...advanced.events] };
 }
 
-// The seat that must act next, or null if no action is pending.
+// The seat that must act next in betting, or null if none is pending.
 export function actorSeat(state: HandState): number | null {
   if (state.betting === null || roundClosed(state.betting)) return null;
   const player = state.betting.players[state.betting.toAct as number];
   return player ? player.seat : null;
+}
+
+// What input the hand is waiting for, if any — a bet or a discard.
+export function pending(
+  state: HandState,
+):
+  | { kind: 'bet'; seat: number }
+  | { kind: 'discard'; seat: number; count: number }
+  | null {
+  if (state.phase !== 'running') return null;
+  if (state.discarding !== null && state.discarding.pending.length > 0) {
+    return {
+      kind: 'discard',
+      seat: state.discarding.pending[0] as number,
+      count: state.discarding.count,
+    };
+  }
+  const seat = actorSeat(state);
+  return seat === null ? null : { kind: 'bet', seat };
+}
+
+// Applies a player's discard choice and advances the hand. `cardIds` are the
+// cardId() values of the cards to discard from that player's hand.
+export function applyDiscard(
+  state: HandState,
+  seat: number,
+  cardIds: readonly string[],
+): StepResult {
+  if (state.phase !== 'running') throw new Error('hand is not running');
+  if (state.discarding === null || state.discarding.pending.length === 0) {
+    throw new Error('no discard is awaiting');
+  }
+  if (seat !== state.discarding.pending[0]) {
+    throw new Error('not this seat’s turn to discard');
+  }
+  if (cardIds.length !== state.discarding.count) {
+    throw new Error(`must discard exactly ${state.discarding.count} card(s)`);
+  }
+
+  const player = state.players.find((p) => p.seat === seat);
+  if (!player) throw new Error('seat is not in the hand');
+
+  const discardSet = new Set(cardIds);
+  if (discardSet.size !== cardIds.length) {
+    throw new Error('the same card was listed twice');
+  }
+  const holeIds = new Set(player.hole.map(cardId));
+  for (const id of cardIds) {
+    if (!holeIds.has(id)) throw new Error('a discarded card is not in hand');
+  }
+
+  const players = state.players.map((p) =>
+    p.seat === seat
+      ? { ...p, hole: p.hole.filter((c) => !discardSet.has(cardId(c))) }
+      : p,
+  );
+  const discarding = {
+    ...state.discarding,
+    pending: state.discarding.pending.slice(1),
+  };
+
+  const events: HandEvent[] = [
+    { type: 'discard-taken', seat, count: cardIds.length },
+  ];
+  const advanced = advance({ ...state, players, discarding });
+  return { state: advanced.state, events: [...events, ...advanced.events] };
 }
 
 // Validates an action without applying it; returns an error message or null.
