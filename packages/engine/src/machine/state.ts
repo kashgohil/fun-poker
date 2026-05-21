@@ -19,6 +19,13 @@ export type HandPhase = 'running' | 'complete';
 
 export type Blind = { seat: number; amount: number };
 
+// An in-progress discard stage (e.g. Crazy Pineapple): each listed seat must
+// still discard `count` cards from their hand, in order.
+export type DiscardPhase = {
+  count: number;
+  pending: number[];
+};
+
 export type HandState = {
   variant: Variant;
   handId: string;
@@ -32,6 +39,7 @@ export type HandState = {
   street: number; // betting-round counter (0 = preflop)
   pot: number; // chips swept from settled streets
   betting: BettingRound | null; // open betting round, if any
+  discarding: DiscardPhase | null; // open discard stage, if any
   blinds: { sb: Blind; bb: Blind };
   phase: HandPhase;
 };
@@ -46,6 +54,8 @@ export type HandEvent =
   | { type: 'street-dealt'; street: string; cards: Card[] }
   | { type: 'action-requested'; seat: number; legalActions: LegalBet[] }
   | { type: 'action-taken'; seat: number; action: BetAction }
+  | { type: 'discard-requested'; seat: number; count: number }
+  | { type: 'discard-taken'; seat: number; count: number }
   | { type: 'pot-updated'; pot: number; pots: SidePot[] }
   | { type: 'showdown'; reveals: Reveal[] }
   | {
