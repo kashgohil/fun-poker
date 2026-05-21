@@ -8,10 +8,24 @@ export const RankSchema = v.picklist([
 ]);
 export type Rank = v.InferOutput<typeof RankSchema>;
 
-export const CardSchema = v.object({
+// A card mirrors the engine's card model: a standard card or a joker, each
+// carrying a copyIndex so duplicates from a multi-deck shoe stay distinct.
+export const StandardCardSchema = v.object({
+  kind: v.literal('standard'),
   rank: RankSchema,
   suit: SuitSchema,
+  copyIndex: v.pipe(v.number(), v.integer(), v.minValue(0)),
 });
+
+export const JokerCardSchema = v.object({
+  kind: v.literal('joker'),
+  copyIndex: v.pipe(v.number(), v.integer(), v.minValue(0)),
+});
+
+export const CardSchema = v.variant('kind', [
+  StandardCardSchema,
+  JokerCardSchema,
+]);
 export type Card = v.InferOutput<typeof CardSchema>;
 
 export const ChipsSchema = v.pipe(v.number(), v.integer(), v.minValue(0));

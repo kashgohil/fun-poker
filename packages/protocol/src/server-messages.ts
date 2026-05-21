@@ -75,6 +75,19 @@ export const ActionTakenSchema = v.object({
   stackAfter: ChipsSchema,
 });
 
+export const DiscardRequestSchema = v.object({
+  type: v.literal('discard-request'),
+  seat: SeatIndexSchema,
+  count: v.pipe(v.number(), v.integer(), v.minValue(1)),
+  deadlineUnixMs: v.number(),
+});
+
+export const DiscardTakenSchema = v.object({
+  type: v.literal('discard-taken'),
+  seat: SeatIndexSchema,
+  count: v.pipe(v.number(), v.integer()),
+});
+
 export const PotUpdateSchema = v.object({
   type: v.literal('pot-update'),
   pots: v.array(PotSchema),
@@ -146,6 +159,8 @@ export const ServerMessageSchema = v.variant('type', [
   StreetDealtSchema,
   ActionRequestSchema,
   ActionTakenSchema,
+  DiscardRequestSchema,
+  DiscardTakenSchema,
   PotUpdateSchema,
   ShowdownSchema,
   HandEndedSchema,

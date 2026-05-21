@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import {
+  CardSchema,
   ChipsSchema,
   SeatIndexSchema,
   TableIdSchema,
@@ -43,6 +44,11 @@ export const RaiseSchema = v.object({
 });
 export const AllInSchema = v.object({ type: v.literal('all-in') });
 
+export const DiscardSchema = v.object({
+  type: v.literal('discard'),
+  cards: v.array(CardSchema),
+});
+
 export const ChatSchema = v.object({
   type: v.literal('chat'),
   tableId: TableIdSchema,
@@ -65,6 +71,7 @@ export const ClientMessageSchema = v.variant('type', [
   BetSchema,
   RaiseSchema,
   AllInSchema,
+  DiscardSchema,
   ChatSchema,
   PingSchema,
 ]);
