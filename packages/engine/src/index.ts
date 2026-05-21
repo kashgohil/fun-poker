@@ -2,4 +2,8 @@ export * from './cards/card';
 export * from './cards/deck';
 export * from './cards/shuffle';
 export * from './descriptor/variant';
+export * from './descriptor/validate';
 export { texasHoldem } from './descriptor/presets/holdem';
+export * from './eval/hand';
+export * from './eval/compare';
+export * from './eval/evaluate';
