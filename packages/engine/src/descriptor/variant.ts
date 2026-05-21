@@ -1,4 +1,4 @@
-import type { Rank, Suit } from '../cards/card';
+import type { Rank } from '../cards/card';
 
 // A deck is described, not hardcoded: any number of standard 52-card decks,
 // any number of jokers, with optional ranks removed (short-deck).
@@ -8,19 +8,13 @@ export type DeckSpec = {
   readonly removeRanks?: readonly Rank[];
 };
 
-// What counts as a wild card.
-export type WildSource =
-  | { readonly kind: 'joker' }
-  | { readonly kind: 'rank'; readonly rank: Rank }
-  | { readonly kind: 'card'; readonly rank: Rank; readonly suit: Suit };
-
+// Jokers are the only wild cards. This rule governs how they behave.
 export type WildRule = {
-  readonly sources: readonly WildSource[];
   // 'full' = becomes any card; 'bug' = wild only for aces, straights, flushes.
   readonly mode: 'full' | 'bug';
-  // May two wild cards resolve to the same card?
+  // May two jokers resolve to the same card?
   readonly twoWildsSameCard: boolean;
-  // Tiebreaker: a natural hand beats an equal wild-made hand.
+  // Tiebreaker: a natural hand beats an equal joker-made hand.
   readonly naturalBeatsWild: boolean;
 };
 
