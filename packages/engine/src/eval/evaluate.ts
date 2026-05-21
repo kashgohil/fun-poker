@@ -174,7 +174,7 @@ export function evaluate5(cards: readonly Card[], opts: EvalOptions = {}): HandV
   return best;
 }
 
-function combinations<T>(items: readonly T[], k: number): T[][] {
+export function combinations<T>(items: readonly T[], k: number): T[][] {
   const result: T[][] = [];
   const combo: T[] = [];
   const recurse = (start: number): void => {
