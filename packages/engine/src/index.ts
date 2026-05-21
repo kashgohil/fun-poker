@@ -10,3 +10,5 @@ export * from './eval/evaluate';
 export * from './betting/round';
 export * from './betting/sizing';
 export * from './betting/pots';
+export * from './machine/state';
+export * from './machine/reducer';
