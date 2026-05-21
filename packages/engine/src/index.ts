@@ -7,3 +7,6 @@ export { texasHoldem } from './descriptor/presets/holdem';
 export * from './eval/hand';
 export * from './eval/compare';
 export * from './eval/evaluate';
+export * from './betting/round';
+export * from './betting/sizing';
+export * from './betting/pots';
