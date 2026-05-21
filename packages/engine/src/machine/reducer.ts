@@ -13,17 +13,8 @@ import {
   uncalledBet,
 } from '../betting/round';
 import { buildPots } from '../betting/pots';
-import { type HandValue, describeHand } from '../eval/hand';
-import { compareHands } from '../eval/compare';
-import { bestSelected } from '../eval/evaluate';
-import type {
-  Award,
-  HandEvent,
-  HandPlayer,
-  HandState,
-  Reveal,
-  StepResult,
-} from './state';
+import { resolveShowdown } from './showdown';
+import type { HandEvent, HandPlayer, HandState, StepResult } from './state';
 
 export type HandSetup = {
   variant: Variant;
@@ -197,21 +188,8 @@ function finishByFold(state: HandState): StepResult {
   };
 }
 
-// Evaluates hands, splits each pot among its winners, and ends the hand.
+// Evaluates hands, splits each pot (high / low / hi-lo), and ends the hand.
 function doShowdown(state: HandState): StepResult {
-  const live = state.players.filter((p) => p.status !== 'folded');
-  const evalOpts = {
-    wild: state.variant.wild,
-    shortDeck: state.variant.shortDeckRanking,
-  };
-  const handBySeat = new Map<number, HandValue>();
-  for (const p of live) {
-    handBySeat.set(
-      p.seat,
-      bestSelected(p.hole, state.community, state.variant.selection, evalOpts),
-    );
-  }
-
   const pots = buildPots(
     state.players.map((p) => ({
       seat: p.seat,
@@ -220,47 +198,27 @@ function doShowdown(state: HandState): StepResult {
     })),
   );
 
-  const players = state.players.map((p) => ({ ...p }));
-  const stackBySeat = new Map(players.map((p) => [p.seat, p]));
-  const awards: Award[] = [];
-
-  pots.forEach((pot, potIndex) => {
-    const contenders = pot.eligibleSeats.filter((s) => handBySeat.has(s));
-    if (contenders.length === 0) return;
-
-    let winners: number[] = [contenders[0] as number];
-    for (let i = 1; i < contenders.length; i++) {
-      const seat = contenders[i] as number;
-      const cmp = compareHands(
-        handBySeat.get(seat) as HandValue,
-        handBySeat.get(winners[0] as number) as HandValue,
-        state.variant.wild,
-      );
-      if (cmp > 0) winners = [seat];
-      else if (cmp === 0) winners.push(seat);
-    }
-
-    const share = Math.floor(pot.amount / winners.length);
-    let remainder = pot.amount - share * winners.length;
-    for (const seat of orderFromButton(state, winners)) {
-      const extra = remainder > 0 ? 1 : 0;
-      remainder -= extra;
-      const amount = share + extra;
-      const player = stackBySeat.get(seat);
-      if (player) player.stack += amount;
-      awards.push({ seat, potIndex, amount });
-    }
-  });
-
-  const events: HandEvent[] = [];
-  if (live.length > 1) {
-    const reveals: Reveal[] = live.map((p) => ({
+  const { awards, reveals } = resolveShowdown(
+    state.variant,
+    state.players.map((p) => ({
       seat: p.seat,
       hole: p.hole,
-      handRank: describeHand(handBySeat.get(p.seat) as HandValue),
-    }));
-    events.push({ type: 'showdown', reveals });
+      folded: p.status === 'folded',
+    })),
+    state.community,
+    pots,
+    (seats) => orderFromButton(state, seats),
+  );
+
+  const players = state.players.map((p) => ({ ...p }));
+  const bySeat = new Map(players.map((p) => [p.seat, p]));
+  for (const award of awards) {
+    const player = bySeat.get(award.seat);
+    if (player) player.stack += award.amount;
   }
+
+  const events: HandEvent[] = [];
+  if (reveals.length > 0) events.push({ type: 'showdown', reveals });
   events.push({
     type: 'hand-ended',
     handId: state.handId,
