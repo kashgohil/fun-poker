@@ -1,56 +1,46 @@
 import { Elysia } from 'elysia';
 import * as v from 'valibot';
-import {
-  ClientMessageSchema,
-  type ServerMessage,
-} from '@fun-poker/protocol';
+import { ClientMessageSchema } from '@fun-poker/protocol';
+import { GameManager } from './src/game/manager';
 
-function send(ws: { send: (data: string) => void }, msg: ServerMessage) {
-  ws.send(JSON.stringify(msg));
-}
+const game = new GameManager();
+
+// Connection identity. MVP: the client passes ?userId=... on the socket URL;
+// real authentication is follow-up work.
+const wsUser = new WeakMap<object, string>();
 
 const app = new Elysia()
   .get('/', () => ({ ok: true }))
   .ws('/ws', {
     open(ws) {
-      // Placeholder: a real impl would look up the user's current table
-      // and send a TableSnapshot here.
-      send(ws, { type: 'pong', ts: Date.now() });
+      const query = (ws.data as { query?: Record<string, string | undefined> })
+        .query;
+      const userId = query?.userId ?? `anon-${crypto.randomUUID()}`;
+      // Key by the raw socket — it is stable across open/message/close,
+      // whereas the ElysiaWS wrapper may be recreated per event.
+      wsUser.set(ws.raw, userId);
+      game.connect(userId, { send: (data) => void ws.raw.send(data) });
     },
     message(ws, raw) {
+      const userId = wsUser.get(ws.raw);
+      if (userId === undefined) return;
       const parsed = v.safeParse(ClientMessageSchema, raw);
       if (!parsed.success) {
-        send(ws, {
-          type: 'error',
-          code: 'invalid-message',
-          message: parsed.issues.map((i) => i.message).join('; '),
-        });
+        ws.raw.send(
+          JSON.stringify({
+            type: 'error',
+            code: 'invalid-message',
+            message: parsed.issues.map((i) => i.message).join('; '),
+          }),
+        );
         return;
       }
-
-      const msg = parsed.output;
-      switch (msg.type) {
-        case 'ping':
-          send(ws, { type: 'pong', ts: msg.ts });
-          return;
-        case 'chat':
-          // Echo for now; real impl broadcasts to the table room.
-          send(ws, {
-            type: 'chat-received',
-            fromUserId: 'self',
-            fromDisplayName: 'you',
-            text: msg.text,
-            ts: Date.now(),
-          });
-          return;
-        default:
-          // All other client actions land here until the game loop is wired.
-          send(ws, {
-            type: 'error',
-            code: 'internal',
-            message: `handler not implemented: ${msg.type}`,
-          });
-      }
+      game.handle(userId, parsed.output);
+    },
+    close(ws) {
+      const userId = wsUser.get(ws.raw);
+      if (userId !== undefined) game.disconnect(userId);
+      wsUser.delete(ws.raw);
     },
   })
   .listen(8080);

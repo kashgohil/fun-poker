@@ -10,7 +10,9 @@
     "typescript": "5"
   },
   "dependencies": {
+    "@fun-poker/engine": "workspace:*",
     "@fun-poker/protocol": "workspace:*",
+    "@sinclair/typebox": "^0.34.0",
     "elysia": "1",
     "valibot": "^1.4.0"
   }
