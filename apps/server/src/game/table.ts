@@ -29,6 +29,8 @@ export class Table {
   readonly bigBlind: number;
   readonly maxSeats: number;
   readonly seats = new Map<number, TableSeat>();
+  // Seats whose player asked to leave mid-hand — cashed out once it ends.
+  readonly pendingLeave = new Set<number>();
   buttonSeat: number | null = null;
   hand: HandState | null = null;
   private handCounter = 0;
@@ -39,6 +41,14 @@ export class Table {
     this.smallBlind = opts.smallBlind;
     this.bigBlind = opts.bigBlind;
     this.maxSeats = opts.maxSeats;
+  }
+
+  get minBuyIn(): number {
+    return this.bigBlind * 20;
+  }
+
+  get maxBuyIn(): number {
+    return this.bigBlind * 200;
   }
 
   seatOf(userId: string): number | undefined {
@@ -70,7 +80,10 @@ export class Table {
 
   removePlayer(userId: string): void {
     const seat = this.seatOf(userId);
-    if (seat !== undefined) this.seats.delete(seat);
+    if (seat !== undefined) {
+      this.seats.delete(seat);
+      this.pendingLeave.delete(seat);
+    }
   }
 
   // Seats that hold a player with chips — eligible to be dealt into a hand.

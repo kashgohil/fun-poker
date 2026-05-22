@@ -4,6 +4,7 @@ import {
   texasHoldem,
   validateAction,
 } from '@fun-poker/engine';
+import { chipRepo } from '@fun-poker/db';
 import type {
   Card,
   ClientMessage,
@@ -12,6 +13,7 @@ import type {
   TableSnapshot,
 } from '@fun-poker/protocol';
 import { Table } from './table';
+import type { ChipService } from './chips';
 import { type Outgoing, mapEvents } from './mapping';
 
 // A transport handle the manager can push messages to.
@@ -21,14 +23,16 @@ export interface Connection {
 
 const ACTION_TIMEOUT_MS = 30_000;
 
-// Owns every table and connection, routes client messages, and drives the
-// engine — the server-side game loop.
+// Owns every table and connection, routes client messages, drives the engine,
+// and moves chips between each player's persistent bank and the table.
 export class GameManager {
   private readonly tables = new Map<string, Table>();
   private readonly connections = new Map<string, Connection>();
   private readonly userTable = new Map<string, string>();
+  private readonly chips: ChipService;
 
-  constructor() {
+  constructor(chips: ChipService = chipRepo) {
+    this.chips = chips;
     this.tables.set(
       'main',
       new Table({
@@ -50,33 +54,34 @@ export class GameManager {
   }
 
   disconnect(userId: string): void {
-    // MVP: drop the socket only. The seat is kept; reconnection and
-    // turn-timeout handling are follow-up work.
     this.connections.delete(userId);
+    // Auto cash-out when safe: leave the table now if no hand is running,
+    // otherwise the seat is cashed out once the current hand ends.
+    void this.requestLeave(userId);
   }
 
-  handle(userId: string, msg: ClientMessage): void {
+  async handle(userId: string, msg: ClientMessage): Promise<void> {
     switch (msg.type) {
       case 'join-table':
-        this.join(userId, msg.tableId, msg.buyIn, msg.seat);
+        await this.join(userId, msg.tableId, msg.buyIn, msg.seat);
         break;
       case 'leave-table':
-        this.leave(userId, msg.tableId);
+        await this.requestLeave(userId);
         break;
       case 'fold':
       case 'check':
       case 'call':
       case 'all-in':
-        this.bet(userId, { kind: msg.type });
+        await this.bet(userId, { kind: msg.type });
         break;
       case 'bet':
-        this.bet(userId, { kind: 'bet', to: msg.amount });
+        await this.bet(userId, { kind: 'bet', to: msg.amount });
         break;
       case 'raise':
-        this.bet(userId, { kind: 'raise', to: msg.amount });
+        await this.bet(userId, { kind: 'raise', to: msg.amount });
         break;
       case 'discard':
-        this.discard(userId, msg.cards);
+        await this.discard(userId, msg.cards);
         break;
       case 'chat':
         this.chat(userId, msg.tableId, msg.text);
@@ -90,19 +95,69 @@ export class GameManager {
     }
   }
 
+  // Returns every table stack to its owner's bank — call on graceful shutdown
+  // so a restart never strands chips. Any hand in progress is voided; players
+  // get back the stack they had when that hand began.
+  async shutdown(): Promise<void> {
+    for (const table of this.tables.values()) {
+      for (const [, seat] of [...table.seats]) {
+        if (seat.stack > 0) {
+          try {
+            await this.chips.adjust(
+              seat.userId,
+              seat.stack,
+              `shutdown-cashout:${table.id}`,
+            );
+          } catch {
+            // Best effort — nothing more we can do during shutdown.
+          }
+        }
+      }
+      table.seats.clear();
+      table.pendingLeave.clear();
+      table.hand = null;
+    }
+  }
+
   // --- message handlers -----------------------------------------------------
 
-  private join(
+  private async join(
     userId: string,
     tableId: string,
     buyIn: number,
     seat?: number,
-  ): void {
+  ): Promise<void> {
     const table = this.tables.get(tableId);
     if (!table) {
       this.error(userId, 'not-at-table', `no table '${tableId}'`);
       return;
     }
+    if (table.seatOf(userId) !== undefined) {
+      this.error(userId, 'seat-taken', 'you are already seated here');
+      return;
+    }
+    if (buyIn < table.minBuyIn || buyIn > table.maxBuyIn) {
+      this.error(
+        userId,
+        'illegal-action',
+        `buy-in must be between ${table.minBuyIn} and ${table.maxBuyIn}`,
+      );
+      return;
+    }
+
+    await this.chips.ensureWallet(userId);
+    const balance = await this.chips.getBalance(userId);
+    if (balance < buyIn) {
+      this.error(
+        userId,
+        'insufficient-funds',
+        `balance ${balance} is below the buy-in ${buyIn}`,
+      );
+      return;
+    }
+
+    // Seat first (in-memory, reversible), then debit the bank. If the debit
+    // fails, undo the seating so the player is never seated for free.
     let assigned: number;
     try {
       assigned = table.seatPlayer(userId, buyIn, seat);
@@ -110,28 +165,60 @@ export class GameManager {
       this.error(userId, 'seat-taken', String(err));
       return;
     }
-    this.userTable.set(userId, tableId);
+    try {
+      await this.chips.adjust(userId, -buyIn, `buy-in:${tableId}`);
+    } catch (err) {
+      table.removePlayer(userId);
+      this.error(userId, 'insufficient-funds', String(err));
+      return;
+    }
 
+    this.userTable.set(userId, tableId);
     this.send(userId, { type: 'table-snapshot', snapshot: snapshotOf(table) });
     this.broadcast(table, {
       type: 'player-joined',
       seat: seatStateOf(table, assigned),
     });
-    this.maybeStartHand(table);
+    await this.maybeStartHand(table);
   }
 
-  private leave(userId: string, tableId: string): void {
-    const table = this.tables.get(tableId);
+  // Leaves the table, returning the player's stack to their bank. If they are
+  // in the current hand, the cash-out is deferred until the hand ends.
+  private async requestLeave(userId: string): Promise<void> {
+    const table = this.tableOf(userId);
     if (!table) return;
     const seat = table.seatOf(userId);
+    if (seat === undefined) return;
+
+    const inHand =
+      table.hand !== null &&
+      table.hand.players.some((p) => p.seat === seat);
+    if (inHand) {
+      table.pendingLeave.add(seat);
+      return;
+    }
+    await this.cashOutAndRemove(table, seat, userId);
+  }
+
+  private async cashOutAndRemove(
+    table: Table,
+    seat: number,
+    userId: string,
+  ): Promise<void> {
+    const stack = table.seats.get(seat)?.stack ?? 0;
     table.removePlayer(userId);
     this.userTable.delete(userId);
-    if (seat !== undefined) {
-      this.broadcast(table, { type: 'player-left', seat, userId });
+    this.broadcast(table, { type: 'player-left', seat, userId });
+    if (stack > 0) {
+      try {
+        await this.chips.adjust(userId, stack, `cash-out:${table.id}`);
+      } catch {
+        // A deposit cannot fail the balance check; ignore transient errors.
+      }
     }
   }
 
-  private bet(userId: string, action: BetAction): void {
+  private async bet(userId: string, action: BetAction): Promise<void> {
     const table = this.tableOf(userId);
     if (!table || table.hand === null) {
       this.error(userId, 'not-at-table', 'no hand is in progress');
@@ -148,20 +235,23 @@ export class GameManager {
       return;
     }
     try {
-      this.dispatch(table, table.applyBet(userId, action));
+      await this.dispatch(table, table.applyBet(userId, action));
     } catch (err) {
       this.error(userId, 'illegal-action', String(err));
     }
   }
 
-  private discard(userId: string, cards: readonly Card[]): void {
+  private async discard(
+    userId: string,
+    cards: readonly Card[],
+  ): Promise<void> {
     const table = this.tableOf(userId);
     if (!table || table.hand === null) {
       this.error(userId, 'not-at-table', 'no hand is in progress');
       return;
     }
     try {
-      this.dispatch(table, table.applyDiscardChoice(userId, cards));
+      await this.dispatch(table, table.applyDiscardChoice(userId, cards));
     } catch (err) {
       this.error(userId, 'illegal-action', String(err));
     }
@@ -181,13 +271,13 @@ export class GameManager {
 
   // --- engine driving -------------------------------------------------------
 
-  private maybeStartHand(table: Table): void {
+  private async maybeStartHand(table: Table): Promise<void> {
     if (!table.canStartHand()) return;
     const seed = (Math.random() * 0x7fffffff) | 0;
-    this.dispatch(table, table.startHand(seed));
+    await this.dispatch(table, table.startHand(seed));
   }
 
-  private dispatch(table: Table, result: StepResult): void {
+  private async dispatch(table: Table, result: StepResult): Promise<void> {
     for (const out of mapEvents(
       result.events,
       result.state,
@@ -197,8 +287,18 @@ export class GameManager {
       this.route(table, out);
     }
     if (result.state.phase === 'complete') {
-      table.settleHand();
-      this.maybeStartHand(table); // begin the next hand
+      table.settleHand(); // syncs final stacks back onto the seats
+      await this.processPendingLeaves(table);
+      await this.maybeStartHand(table); // begin the next hand
+    }
+  }
+
+  // Cashes out any seat whose player asked to leave during the hand.
+  private async processPendingLeaves(table: Table): Promise<void> {
+    for (const seat of [...table.pendingLeave]) {
+      const userId = table.seats.get(seat)?.userId;
+      if (userId) await this.cashOutAndRemove(table, seat, userId);
+      else table.pendingLeave.delete(seat);
     }
   }
 
@@ -252,8 +352,8 @@ function snapshotOf(table: Table): TableSnapshot {
     config: {
       smallBlind: table.smallBlind,
       bigBlind: table.bigBlind,
-      minBuyIn: table.bigBlind * 20,
-      maxBuyIn: table.bigBlind * 200,
+      minBuyIn: table.minBuyIn,
+      maxBuyIn: table.maxBuyIn,
       maxSeats: 12,
       actionTimeoutMs: ACTION_TIMEOUT_MS,
     },
