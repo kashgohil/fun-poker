@@ -115,6 +115,14 @@
         "typescript": "^5",
       },
     },
+    "packages/design": {
+      "name": "@fun-poker/design",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5",
+      },
+    },
     "packages/engine": {
       "name": "@fun-poker/engine",
       "version": "0.0.0",
@@ -512,6 +520,8 @@
     "@expo/xcpretty": ["@expo/xcpretty@4.4.4", "", { "dependencies": { "@babel/code-frame": "^7.20.0", "chalk": "^4.1.0", "js-yaml": "^4.1.0" }, "bin": { "excpretty": "build/cli.js" } }, "sha512-4aQzz9vgxcNXFfo/iyNgDDYfsU5XGKKxWxZopw0cVotHiW+U8IJbIxMaxsINs6bHhtkG3StKNPcOrn3eBuxKPw=="],
 
     "@fun-poker/db": ["@fun-poker/db@workspace:packages/db"],
+
+    "@fun-poker/design": ["@fun-poker/design@workspace:packages/design"],
 
     "@fun-poker/engine": ["@fun-poker/engine@workspace:packages/engine"],
 
