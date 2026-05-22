@@ -1,21 +1,33 @@
 import { Elysia } from 'elysia';
 import * as v from 'valibot';
 import { ClientMessageSchema } from '@fun-poker/protocol';
+import { auth, userIdFromConnection } from './src/auth/auth';
 import { GameManager } from './src/game/manager';
 
 const game = new GameManager();
 
-// Connection identity. MVP: the client passes ?userId=... on the socket URL;
-// real authentication is follow-up work.
+// Maps each live socket to its authenticated user id.
 const wsUser = new WeakMap<object, string>();
 
 const app = new Elysia()
   .get('/', () => ({ ok: true }))
+  // Better Auth owns every route under /api/auth/* (sign-up, sign-in, OAuth
+  // callbacks, session). It reads the raw Request directly.
+  .all('/api/auth/*', ({ request }) => auth.handler(request))
   .ws('/ws', {
-    open(ws) {
-      const query = (ws.data as { query?: Record<string, string | undefined> })
-        .query;
-      const userId = query?.userId ?? `anon-${crypto.randomUUID()}`;
+    async open(ws) {
+      const data = ws.data as {
+        headers?: Record<string, string | undefined>;
+        query?: Record<string, string | undefined>;
+      };
+      const userId = await userIdFromConnection(
+        data.headers?.cookie,
+        data.query?.token,
+      );
+      if (userId === null) {
+        ws.raw.close(4001, 'unauthorized');
+        return;
+      }
       // Key by the raw socket — it is stable across open/message/close,
       // whereas the ElysiaWS wrapper may be recreated per event.
       wsUser.set(ws.raw, userId);
@@ -35,7 +47,9 @@ const app = new Elysia()
         );
         return;
       }
-      game.handle(userId, parsed.output);
+      void game.handle(userId, parsed.output).catch((err) => {
+        console.error('[ws] handler error', err);
+      });
     },
     close(ws) {
       const userId = wsUser.get(ws.raw);
@@ -46,3 +60,10 @@ const app = new Elysia()
   .listen(8080);
 
 console.log(`Listening on ${app.server!.url}`);
+
+// Graceful shutdown: return every table stack to its owner's bank before exit.
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    void game.shutdown().finally(() => process.exit(0));
+  });
+}
