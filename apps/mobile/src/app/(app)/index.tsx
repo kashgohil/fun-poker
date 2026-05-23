@@ -4,6 +4,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +21,9 @@ export default function Lobby() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
+  const [joinCode, setJoinCode] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -35,6 +39,30 @@ export default function Lobby() {
       active = false;
     };
   }, []);
+
+  async function createTable() {
+    setCreating(true);
+    setError(null);
+    try {
+      const res = await authClient.$fetch('/api/tables', { method: 'POST' });
+      const data = res.data as { tableId?: string } | undefined;
+      if (data?.tableId) {
+        router.push(`/table/${data.tableId}`);
+      } else {
+        setError('Could not create a table');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create table');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function joinByCode() {
+    const code = joinCode.trim().toUpperCase();
+    if (!code) return;
+    router.push(`/table/${code}`);
+  }
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -54,9 +82,38 @@ export default function Lobby() {
           )}
         </View>
 
-        <Pressable style={styles.joinButton} onPress={() => router.push('/table')}>
-          <Text style={styles.joinText}>Join Table</Text>
+        <Pressable
+          style={[styles.primary, creating && styles.disabled]}
+          onPress={createTable}
+          disabled={creating}>
+          {creating ? (
+            <ActivityIndicator color={colors.text.primary} />
+          ) : (
+            <Text style={styles.primaryText}>Create new table</Text>
+          )}
         </Pressable>
+
+        <View style={styles.joinRow}>
+          <TextInput
+            style={styles.codeInput}
+            placeholder="Enter code"
+            placeholderTextColor={colors.text.muted}
+            value={joinCode}
+            onChangeText={setJoinCode}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={8}
+          />
+          <Pressable style={styles.joinBtn} onPress={joinByCode}>
+            <Text style={styles.joinBtnText}>Join</Text>
+          </Pressable>
+        </View>
+
+        <Pressable style={styles.quick} onPress={() => router.push('/table/main')}>
+          <Text style={styles.quickText}>Quick join — main table</Text>
+        </Pressable>
+
+        {error && <Text style={styles.error}>{error}</Text>}
 
         <Pressable
           style={styles.signOut}
@@ -77,7 +134,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
-    gap: spacing.lg,
+    gap: spacing.md,
   },
   greeting: {
     color: colors.text.primary,
@@ -91,6 +148,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
     alignItems: 'center',
     gap: spacing.xs,
+    marginBottom: spacing.sm,
   },
   balanceLabel: {
     color: colors.text.muted,
@@ -102,16 +160,59 @@ const styles = StyleSheet.create({
     fontSize: fontSize.display,
     fontWeight: fontWeight.bold,
   },
-  joinButton: {
+  primary: {
     backgroundColor: colors.action.call,
     borderRadius: radii.md,
     paddingVertical: spacing.lg,
     alignItems: 'center',
   },
-  joinText: {
+  disabled: {
+    opacity: 0.6,
+  },
+  primaryText: {
     color: colors.text.primary,
     fontSize: fontSize.lg,
     fontWeight: fontWeight.semibold,
+  },
+  joinRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  codeInput: {
+    flex: 1,
+    backgroundColor: colors.surface.raised,
+    color: colors.accent.gold,
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.bold,
+    letterSpacing: 2,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    textAlign: 'center',
+  },
+  joinBtn: {
+    backgroundColor: colors.accent.info,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.xl,
+    justifyContent: 'center',
+  },
+  joinBtnText: {
+    color: colors.text.primary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
+  },
+  quick: {
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  quickText: {
+    color: colors.text.secondary,
+    fontSize: fontSize.sm,
+  },
+  error: {
+    color: colors.action.raise,
+    fontSize: fontSize.sm,
+    textAlign: 'center',
   },
   signOut: {
     paddingVertical: spacing.sm,
