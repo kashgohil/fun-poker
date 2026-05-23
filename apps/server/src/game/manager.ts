@@ -49,6 +49,23 @@ export class GameManager {
     return this.tables.get(id);
   }
 
+  // Creates a fresh table with a short, shareable code. Players join it the
+  // same way as any other table — by passing the code as `tableId`.
+  createTable(): string {
+    const id = generateTableId(this.tables);
+    this.tables.set(
+      id,
+      new Table({
+        id,
+        variant: texasHoldem,
+        smallBlind: 10,
+        bigBlind: 20,
+        maxSeats: 12,
+      }),
+    );
+    return id;
+  }
+
   connect(userId: string, connection: Connection): void {
     this.connections.set(userId, connection);
   }
@@ -329,6 +346,22 @@ export class GameManager {
   ): void {
     this.send(userId, { type: 'error', code, message });
   }
+}
+
+// Unambiguous alphabet — no 0/O/1/I/L to avoid sharing/typing confusion.
+const ID_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+function generateTableId(taken: Map<string, unknown>, length = 6): string {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    let id = '';
+    for (let i = 0; i < length; i++) {
+      id += ID_ALPHABET.charAt(
+        Math.floor(Math.random() * ID_ALPHABET.length),
+      );
+    }
+    if (!taken.has(id)) return id;
+  }
+  throw new Error('failed to allocate a unique table id');
 }
 
 // --- snapshot builders ------------------------------------------------------

@@ -31,6 +31,15 @@ const app = new Elysia()
       balance: await chipRepo.getBalance(session.user.id),
     };
   })
+  // Create a new shareable table and return its short code.
+  .post('/api/tables', async ({ request, set }) => {
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session) {
+      set.status = 401;
+      return { error: 'unauthorized' };
+    }
+    return { tableId: game.createTable() };
+  })
   .ws('/ws', {
     async open(ws) {
       const data = ws.data as {
