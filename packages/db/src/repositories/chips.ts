@@ -3,7 +3,7 @@ import { db } from '../client';
 import { chipLedger, wallet } from '../schema';
 
 // Chips granted to a brand-new play-money account.
-export const STARTING_CHIPS = 10_000;
+export const STARTING_CHIPS = 100_000;
 
 // The chip bank. Every balance change goes through `adjust`, which is
 // transactional and records a ledger entry — so chips can never be silently
