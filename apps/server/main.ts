@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia';
 import * as v from 'valibot';
 import { ClientMessageSchema } from '@fun-poker/protocol';
+import { chipRepo } from '@fun-poker/db';
 import { auth, userIdFromConnection } from './src/auth/auth';
 import { GameManager } from './src/game/manager';
 
@@ -14,6 +15,22 @@ const app = new Elysia()
   // Better Auth owns every route under /api/auth/* (sign-up, sign-in, OAuth
   // callbacks, session). It reads the raw Request directly.
   .all('/api/auth/*', ({ request }) => auth.handler(request))
+  // The signed-in player's profile and chip balance — used by the lobby.
+  .get('/api/me', async ({ request, set }) => {
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session) {
+      set.status = 401;
+      return { error: 'unauthorized' };
+    }
+    return {
+      user: {
+        id: session.user.id,
+        name: session.user.name,
+        email: session.user.email,
+      },
+      balance: await chipRepo.getBalance(session.user.id),
+    };
+  })
   .ws('/ws', {
     async open(ws) {
       const data = ws.data as {

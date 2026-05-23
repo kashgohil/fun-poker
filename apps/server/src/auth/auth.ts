@@ -1,6 +1,7 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins';
+import { expo } from '@better-auth/expo';
 import { chipRepo, db, schema } from '@fun-poker/db';
 
 // OAuth providers are only registered when their credentials are present, so
@@ -30,9 +31,11 @@ export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: 'pg', schema }),
   emailAndPassword: { enabled: true },
   socialProviders,
-  // The bearer plugin lets non-browser clients (the mobile app) authenticate
-  // with an Authorization: Bearer <token> header instead of a cookie.
-  plugins: [bearer()],
+  // Trust the mobile app's deep-link schemes for OAuth redirects.
+  trustedOrigins: ['mobile://', 'exp://'],
+  // bearer: lets the mobile app authenticate with an Authorization header.
+  // expo: handles the Expo deep-link OAuth flow and secure-store sessions.
+  plugins: [bearer(), expo()],
   databaseHooks: {
     user: {
       create: {
