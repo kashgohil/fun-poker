@@ -93,27 +93,35 @@ export const PotUpdateSchema = v.object({
   pots: v.array(PotSchema),
 });
 
+export const RevealSchema = v.object({
+  seat: SeatIndexSchema,
+  cards: v.array(CardSchema),
+  handRank: v.string(), // e.g. "Full House, Kings full of Twos"
+});
+export type Reveal = v.InferOutput<typeof RevealSchema>;
+
+export const AwardSchema = v.object({
+  seat: SeatIndexSchema,
+  amount: ChipsSchema,
+  potIndex: v.number(),
+});
+export type Award = v.InferOutput<typeof AwardSchema>;
+
 export const ShowdownSchema = v.object({
   type: v.literal('showdown'),
-  reveals: v.array(
-    v.object({
-      seat: SeatIndexSchema,
-      cards: v.array(CardSchema),
-      handRank: v.string(), // e.g. "Full House, Kings full of Twos"
-    }),
-  ),
-  awards: v.array(
-    v.object({
-      seat: SeatIndexSchema,
-      amount: ChipsSchema,
-      potIndex: v.number(),
-    }),
-  ),
+  reveals: v.array(RevealSchema),
 });
 
+// Awards live on hand-ended so they reach the client in every case —
+// including fold-to-one, where no `showdown` is emitted.
 export const HandEndedSchema = v.object({
   type: v.literal('hand-ended'),
   handId: HandIdSchema,
+  awards: v.array(AwardSchema),
+  // Stacks after the hand settled — so clients can show winnings.
+  finalStacks: v.array(
+    v.object({ seat: SeatIndexSchema, stack: ChipsSchema }),
+  ),
 });
 
 export const HandStateUpdateSchema = v.object({
