@@ -1,16 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react';
-import {
-  Dimensions,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import type { ClientMessage } from '@fun-poker/protocol';
 import {
   colors,
@@ -26,11 +17,12 @@ import { PlayingCard } from '@/components/card';
 import { Seat } from '@/components/seat';
 import { ActionBar } from '@/components/action-bar';
 
-const TABLE_ID = 'main';
 const DEFAULT_BUY_IN = 1000;
 
 export default function Table() {
   const router = useRouter();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const tableId = id ?? 'main';
   const { data: session } = authClient.useSession();
   const meUserId = session?.user.id;
 
@@ -48,7 +40,7 @@ export default function Table() {
         if (connected) {
           socket.send({
             type: 'join-table',
-            tableId: TABLE_ID,
+            tableId: tableId,
             buyIn: DEFAULT_BUY_IN,
           });
         }
@@ -57,13 +49,13 @@ export default function Table() {
     socketRef.current = socket;
     return () => {
       try {
-        socket.send({ type: 'leave-table', tableId: TABLE_ID });
+        socket.send({ type: 'leave-table', tableId });
       } catch {
         // socket may already be closed
       }
       socket.close();
     };
-  }, [apply, setConnected, reset]);
+  }, [apply, setConnected, reset, tableId]);
 
   const seats = useGame((s) => s.seats);
   const community = useGame((s) => s.community);
@@ -74,9 +66,9 @@ export default function Table() {
   const error = useGame((s) => s.error);
   const lastAwards = useGame((s) => s.lastAwards);
 
-  const { width, height } = Dimensions.get('window');
-  const insets = useSafeAreaInsets();
-  const tableHeight = height - insets.top - insets.bottom - 200; // room for hole + action bar
+  // Measure the felt as it lays out so seat positions adapt to whatever
+  // room the action bar / hero hole row leave on this device.
+  const [felt, setFelt] = useState({ width: 0, height: 0 });
 
   // Rotate seats so the hero sits at the bottom-centre of the layout.
   const orderedSeats = useMemo(() => {
@@ -89,10 +81,10 @@ export default function Table() {
 
   const positions = useMemo(
     () =>
-      orderedSeats.length === 0
+      orderedSeats.length === 0 || felt.width === 0
         ? []
-        : seatPositions(orderedSeats.length, width / tableHeight),
-    [orderedSeats.length, width, tableHeight],
+        : seatPositions(orderedSeats.length, felt.width / felt.height),
+    [orderedSeats.length, felt.width, felt.height],
   );
 
   const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
@@ -107,27 +99,43 @@ export default function Table() {
 
   return (
     <View style={styles.screen}>
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <Pressable style={styles.leave} onPress={() => router.back()}>
-          <Text style={styles.leaveText}>← Lobby</Text>
-        </Pressable>
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={styles.topRow}>
+          <Pressable style={styles.leave} onPress={() => router.back()}>
+            <Text style={styles.leaveText}>← Lobby</Text>
+          </Pressable>
+          <Pressable
+            style={styles.shareBtn}
+            onPress={() =>
+              void Share.share({
+                message: `Join my poker table — code ${tableId}`,
+              })
+            }>
+            <Text style={styles.shareLabel}>SHARE CODE</Text>
+            <Text style={styles.shareCode}>{tableId}</Text>
+          </Pressable>
+        </View>
 
-        <View style={[styles.felt, { width, height: tableHeight }]}>
-          {totalPot > 0 && (
-            <View style={[styles.pot, { top: tableHeight * 0.34 }]}>
+        <View
+          style={styles.felt}
+          onLayout={(e) =>
+            setFelt({
+              width: e.nativeEvent.layout.width,
+              height: e.nativeEvent.layout.height,
+            })
+          }>
+          {totalPot > 0 && felt.height > 0 && (
+            <View style={[styles.pot, { top: felt.height * 0.34 }]}>
               <Text style={styles.potLabel}>POT</Text>
               <Text style={styles.potValue}>{totalPot.toLocaleString()}</Text>
             </View>
           )}
 
-          {community.length > 0 && (
+          {community.length > 0 && felt.height > 0 && (
             <View
               style={[
                 styles.community,
-                {
-                  top: tableHeight * 0.46,
-                  width,
-                },
+                { top: felt.height * 0.46, width: felt.width },
               ]}>
               {community.map((c, i) => (
                 <View key={i} style={styles.communityCard}>
@@ -139,7 +147,7 @@ export default function Table() {
 
           {orderedSeats.map((seat, i) => {
             const pos = positions[i];
-            if (!pos) return null;
+            if (!pos || felt.width === 0) return null;
             const isHero = seat.userId === meUserId;
             return (
               <View
@@ -147,8 +155,8 @@ export default function Table() {
                 style={[
                   styles.seatWrap,
                   {
-                    left: pos.x * width - 48,
-                    top: pos.y * tableHeight - 28,
+                    left: pos.x * felt.width - 48,
+                    top: pos.y * felt.height - 28,
                   },
                 ]}>
                 <Seat
@@ -204,15 +212,40 @@ export default function Table() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.table.feltEdge },
   safe: { flex: 1 },
-  leave: {
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  leave: {
     paddingVertical: spacing.xs,
   },
   leaveText: {
     color: colors.text.secondary,
     fontSize: fontSize.sm,
   },
+  shareBtn: {
+    backgroundColor: colors.surface.raised,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  shareLabel: {
+    color: colors.text.muted,
+    fontSize: 10,
+    letterSpacing: 1,
+  },
+  shareCode: {
+    color: colors.accent.gold,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
+    letterSpacing: 2,
+  },
   felt: {
+    flex: 1,
     backgroundColor: colors.table.felt,
     position: 'relative',
   },
