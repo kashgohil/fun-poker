@@ -29,9 +29,6 @@ export function mapEvents(
   actionTimeoutMs: number,
 ): Outgoing[] {
   const out: Outgoing[] = [];
-  const handEnded = events.find((e) => e.type === 'hand-ended');
-  const awards =
-    handEnded && handEnded.type === 'hand-ended' ? handEnded.awards : [];
 
   for (const ev of events) {
     switch (ev.type) {
@@ -145,7 +142,6 @@ export function mapEvents(
               cards: r.hole as Card[],
               handRank: r.handRank,
             })),
-            awards,
           },
         });
         break;
@@ -153,7 +149,12 @@ export function mapEvents(
       case 'hand-ended':
         out.push({
           target: 'all',
-          message: { type: 'hand-ended', handId: ev.handId },
+          message: {
+            type: 'hand-ended',
+            handId: ev.handId,
+            awards: ev.awards,
+            finalStacks: ev.finalStacks,
+          },
         });
         break;
     }

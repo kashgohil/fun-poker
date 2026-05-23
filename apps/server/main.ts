@@ -37,8 +37,10 @@ const app = new Elysia()
         headers?: Record<string, string | undefined>;
         query?: Record<string, string | undefined>;
       };
+      // Mobile clients pass their session cookie as ?cookie= because the
+      // React Native WebSocket cannot attach cookie headers on connect.
       const userId = await userIdFromConnection(
-        data.headers?.cookie,
+        data.headers?.cookie ?? data.query?.cookie,
         data.query?.token,
       );
       if (userId === null) {
